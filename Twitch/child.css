@@ -1,0 +1,26 @@
+body {
+	background-color: rgb(255,255,255,0);
+	font-family: arial;
+	overflow: hidden;
+}
+
+/*MASTER CONTAINER*/
+#MasterContainer {
+	width: 1920px;
+	height: 1080px;
+	position: absolute;
+	text-align: center;
+	visibility: /*mvis*/hidden/*/mvis*/;
+}
+
+/*IMAGE AREA*/
+#MasterImageContainer {
+	width: 1920px;
+	height: 1080px;
+	background: /*i-add*/url("images/dsp.png")/*/i-add*/;
+}
+
+#CollectibleImage {
+	width: 1920px;
+	height: 1080px;
+}
