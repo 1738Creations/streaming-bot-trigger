@@ -75,9 +75,14 @@ You need to add custom items to 'ArrayOfStuffToPlay'. The indexes are:
   - Integer
 - Array of strings we want to match ('include') in the chat message
 - Time to display image in milliseconds
-  - It's actually the time to refresh the page, but the image and sound will be removed on refresh
+  - It's not really but kind of is
+  - The web page js checks if the audio is playing and wont' refresh until it's stopped
+  - This is still used though, to prevent the css/html writing before the sound has even triggered (js is stupid)
+  - This should be be within a reasonable tolerance to the length of the audio clip
   
- ...for example: [['images/dsp.png', 'images/dsp2.png'], 'sounds/the_guy.ogg', 2, ['guy', 'loser'], 2300],
+ ...for example: [['images/dsp.png', 'images/dsp2.png'], 'sounds/the_guy.ogg', 2, ['guy', 'loser'], 2300]
+ 
+ To prevent sounds being triggered too often, we use 'TimeToPlayNext' as a blocker. By default it's set to 7000 (7 seconds, which is still fast for my liking). After this time message scanning will trigger again.
 
 This version has to be run from a web server. If not, the local files won't be picked up and the page will never refresh. I use XAMPP. It couldn't be easier to set up. Download, run installer, start server, go to localhost, done.
 - https://www.apachefriends.org/download.html
