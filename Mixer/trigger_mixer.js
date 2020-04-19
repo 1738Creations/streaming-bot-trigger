@@ -1,5 +1,6 @@
-// For connecting to Twitch
-const tmi = require('tmi.js');
+// For connecting to Mixer
+const Mixer = require('@mixer/client-node');
+const ws = require('ws');
 
 // For writing files
 const fs = require('fs');
@@ -12,12 +13,12 @@ var TimeToPlayNext = 7000;
 var ReadyToPlay = false;
 
 // Hide the last game
-HTMLCSSUpdate("hidden", null, "");
+HTMLCSSUpdate("hidden", null, "", 0);
 
 // CssVisibility = visible/hidden
 // CssImage = index in 
 // HtmlAudio = path (sounds/whatever.ogg) or ""
-function HTMLCSSUpdate(CssVisibility, CssImage, HtmlAudio) {
+function HTMLCSSUpdate(CssVisibility, CssImage, HtmlAudio, TimeBeforeHidingImage) {
 
 	// First we need to write the HTML, this is not update checked by the js
 	try {
@@ -73,6 +74,12 @@ function HTMLCSSUpdate(CssVisibility, CssImage, HtmlAudio) {
 		console.log('Error writing to file.');
 		console.log(err);
 	});
+
+	// Start the delay for hiding this, carried in the array
+	if (TimeBeforeHidingImage > 0) {
+		setTimeout(ImageDisplayTasks, TimeBeforeHidingImage);
+	}
+
 	// \END of file write
 }
 
@@ -80,65 +87,76 @@ function HTMLCSSUpdate(CssVisibility, CssImage, HtmlAudio) {
 // All the images and audio we want to play
 // array of possible images to show, sound, matches required, matches, time to display image (ms)
 var ArrayOfStuffToPlay = [
-	[['images/dsp.png', 'images/dsp2.png'], 'sounds/the_guy.ogg', 2, ['guy', 'loser'], 2300],
-	[['images/webby.png'], 'sounds/webby.ogg', 1, ['leave', 'join'], 2000]
+	[['images/dsp.png', 'images/dsp2.png'], 'sounds/the_guy.ogg', 2, ['guy', 'loser'], 2000],
+	[['images/webby.png'], 'sounds/webby.ogg', 1, ['leave', 'join'], 1800]
 ];
 
 
-// Twitch
-// Define configuration options
-const opts = {
-	identity: {
-		username: <replace_me>, // Name of the bot account, example: username: 'accountname'
-		password: <replace_me> // Auth token of the bot account, example: password: 'oauth:4seeee33535ewer35tewrw334'
-	},
-	channels: [
-		<replace_me> // Name of channel to join, example: 'channel_name'
-	]
+// Mixer
+// Instantiate a new Mixer Client
+// See the Mixer documentation for anything related to their system
+// https://dev.mixer.com/
+const client = new Mixer.Client(new Mixer.DefaultRequestRunner());
+
+client.use(new Mixer.OAuthProvider(client, {
+    tokens: {
+        access: <replace_me>, // access: 'xxxj2kdl2j5er4il2rhew3i43lrhlwe423423',
+        // Tokens retrieved via this page last for 1 year.
+        expires: Date.now() + (365 * 24 * 60 * 60 * 1000)
+    },
+}));
+
+// Mixer
+// Joins the bot to chat
+async function joinChat(userId, channelId) {
+    const joinInformation = await getConnectionInformation(channelId);
+    const socket = new Mixer.Socket(ws, joinInformation.endpoints).boot();
+	
+	// Set the initial time out before anything triggers
+	setTimeout(TimeBeforeNextCanBeTriggered, TimeToPlayNext);
+	console.log("Trigger warning online");
+
+    return socket.auth(channelId, userId, joinInformation.authkey).then(() => socket);
 }
 
-// Twitch
-// Create a client with our options
-const client = new tmi.client(opts);
+// Mixer
+// Returns body response of bot joining chat
+async function getConnectionInformation(channelId) {
+    return new Mixer.ChatService(client).join(channelId).then(response => response.body);
+}
 
-// Twitch
-// Register our event handlers (defined below)
-client.on('connected', onConnectedHandler);
-client.on('message', onMessageHandler);
-// Twitch won't allow 'new' (I've been registered for 3 days and can't whisper) users to whisper, so this ruins the game and users have to spam chat
-//client.on('whisper', onWhisperHandler);
-
-// Twitch
-// Connect the bot to Twitch
-client.connect();
+// Mixer
+// ...gets details about users in chat
+async function getUserInfo() {
+    return client.request('GET', 'users/current').then(response => response.body);
+}
 
 
-// No Twitch functions below this lineHeight
+// No Mixer functions below this lineHeight
 // ------------------------------------
 
 
-// Received a message. This event is fired whenever you receive a chat, action or whisper message
-function onMessageHandler (channel, userstate, msg, self) {
+// Start the bot / join it to chat
+getUserInfo().then(async userInfo => {
+	// The ID of the channel  to join specific channel and verify users messaging the bot are in this channel
+	const targetChannelID = <replace_me>; // example: targetChannelID = 123456789
 
-	// No point going any further if we're in a break
+	// Joins the bot to the channel
+	const socket = await joinChat(userInfo.id, targetChannelID);
+	
+    // Looks for any chat message (main chat, whispers...)
+	// For this game we don't care if people spam main chat with the command, if we did we'd force the bot to only listen for whispers
+	// -- data.message.meta[0].whisper == true)
+	// -- https://dev.mixer.com/reference/chat/events/chatmessage
+    socket.on('ChatMessage', data => {
+
 	if (ReadyToPlay == true) {
-
-		// Ignore messages from the bot, which shouldn't be an issue but calling it regardless
-		if (self)
-		{ return; }
-
-		//As we can't reliably handle whispers in Twitch, we're don't need to check whether users are in the same channel
-
-		// We're going to check the type of message - we only care about general chat messages
-		switch(userstate["message-type"])
-		{
-			case "action":
-				// This is an action message..
-				break;
-
-			case "chat":
+		
+			// If the message has contents we can read
+			if (data.message.message[0].data)
+			{
 				// Set the message body. Trim it too
-				var MessageText = msg.toLowerCase().trim();
+				var MessageText = data.message.message[0].data.toLowerCase().trim();
 				
 				// If this is greater than -1 we can cut the array and trigger a play
 				var ImageToPlay = "";
@@ -190,44 +208,25 @@ function onMessageHandler (channel, userstate, msg, self) {
 				// A match was found
 				if (ReadyToPlay == false) {	
 					// Update CSS (for visibility control)
-					HTMLCSSUpdate('visible', ImageToPlay, SoundToPlay);
-
-					// Start the delay for hiding this, carried in the array
-					setTimeout(ImageDisplayTasks, TimeToDisplayImage);
+					HTMLCSSUpdate('visible', ImageToPlay, SoundToPlay, TimeToDisplayImage);
 				}
 
-				break;
-				
-			case "whisper":
-				// We can also handle whispers here, but we don't care about them
-				break;
-				
-			default:
-				// Should never get here
-				console.log("Unknown command message - should never get here");
-				break;
+			}
 		}
-    }
-}
+	});
 
-
-// Called every time the bot connects to Twitch chat
-function onConnectedHandler (addr, port) {
-	// Starts the game
-	// (function, time before game starts in ms, joinChat)
-	// ...if set too low (less than a second) it may not fire the initial chat message as the bot can take a while to join chat
-
-	setTimeout(TimeBeforeNextCanBeTriggered, TimeToPlayNext);
-
-	// Logging that we're online
-	console.log("Trigger warning online");
-}
+    // Handle errors
+    socket.on('error', error => {
+        console.error('Socket error');
+        console.error(error);
+    });
+});
 
 
 // This is the time to display the image
 function ImageDisplayTasks() {
 	// Set the css to hidden
-	HTMLCSSUpdate('hidden', null, "");
+	HTMLCSSUpdate('hidden', null, "", 0);
 	
 	// Set the start of the next trigger after this amount of time
 	setTimeout(TimeBeforeNextCanBeTriggered, TimeToPlayNext);
